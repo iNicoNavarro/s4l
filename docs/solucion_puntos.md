@@ -35,7 +35,9 @@ Se propone un modelo basado en dos hechos principales:
 
 Ambos comparten dimensiones como `Patient_dim`, `Diagnosis_dim`, `Tiempo`. (La dimensión del tiempo en lo personal no me gusta utilizarla pero no deja de ser una opción que sigue las buenas prácticas).
 
-![1745397107958](image/solucion_puntos/1745397107958.png)
+#### Esquema del modelo:
+
+![Modelo lógico ERP](./pictures/datamodeler_modelo_logico_ERP.png)
 
 #### Nuevas tablas propuestas:
 
@@ -264,13 +266,358 @@ Para ejecutar este script desde WSL o terminal:
 
 ### Output:
 
-![1745397854310](image/solucion_puntos/1745397854310.png)
+#### Dimensión: Patient
 
-![1745397867851](image/solucion_puntos/1745397867851.png)  ![1745397877414](image/solucion_puntos/1745397877414.png)
+![Dim Patient](./pictures/dim_patient.png)
 
-![1745397886449](image/solucion_puntos/1745397886449.png)   ![1745397922166](image/solucion_puntos/1745397922166.png)  ![1745397948986](image/solucion_puntos/1745397948986.png) 
+#### Dimensión: Diagnosis
 
-![1745397985365](image/solucion_puntos/1745397985365.png)  ![1745397990769](image/solucion_puntos/1745397990769.png)
+![Dim Diagnosis](./pictures/dim_diagnosis.png)
 
+#### Dimensión: Assistance Status
 
-**Nota**: La solución fue ejecutada localmente con PySpark, aunque podría escalar fácilmente a un clúster real Spark standalone o Databricks, ya que los scripts están desacoplados del entorno de ejecución.
+![Dim Assistance Status](./pictures/dim_assistance_status.png)
+
+#### Dimensión: Assignment Status
+
+![Dim Assignment Status](./pictures/dim_assignment_status.png)
+
+#### Dimensión: Speciality
+
+![Dim Speciality](./pictures/dim_speciality.png)
+
+#### Dimensión: Speciality Group
+
+![Dim Speciality Group](./pictures/dim_speciality_group.png)
+
+#### Hechos: Attention
+
+![Fact Attention](./pictures/fact_attention.png)
+
+#### Hechos: Patient Diagnosis
+
+![Fact Patient Diagnosis](./pictures/fact_patient_diagnosis.png)
+
+### **Nota: La solución fue ejecutada localmente con PySpark, aunque podría escalar fácilmente a un clúster real Spark standalone o Databricks, ya que los scripts están desacoplados del entorno de ejecución.**
+
+## Punto 4 - Consolidación de información del ERP en una vista lógica
+
+Para consolidar la información proveniente del ERP en una única vista lógica, se partió del modelo propuesto en el  **punto 1** , el cual normaliza y separa adecuadamente las entidades clave del sistema. Este modelo facilita la construcción de consultas analíticas eficientes mediante el uso de joins bien definidos entre tablas de hechos y dimensiones.
+
+En este caso, se creó una vista que resume los datos relacionados con las atenciones médicas de los pacientes, permitiendo tener una única tabla enriquecida que integra los siguientes elementos: identificación del paciente, fecha de atención, especialidad médica asignada, grupo de especialidad, estado de asignación y asistencia.
+
+### Estrategia técnica
+
+Se implementaron dos formas equivalentes para construir esta vista:
+
+1. **Usando Spark SQL** : registrando temporalmente cada tabla como una vista y luego ejecutando un query desde un archivo `.sql`.
+2. **Usando la API de DataFrame de PySpark** : encadenando los joins directamente sobre los DataFrames cargados desde Parquet.
+
+Ambos enfoques leen los datos desde la **zona silver** del Data Lake y consolidan la información en una única vista que es luego almacenada en la  **zona gold** , bajo el nombre `atencion_detalle`.
+
+Esta implementación permite un análisis ágil y limpio sobre los registros de atención médica sin pérdida de trazabilidad.
+
+### Ejecución
+
+`python puntos_scripts/punto_4.py --mode sql/df`
+
+### Contenido de la vista `atencion_detalle`
+
+| Campo                 | Fuente                             |
+| --------------------- | ---------------------------------- |
+| `ATTID`             | `fact_attention`                 |
+| `FECHA_ATENCION`    | `fact_attention.ATTFIN01`        |
+| `PACID`             | `fact_attention`/`dim_patient` |
+| `PACDOC`            | `dim_patient`                    |
+| `FIRST_NAME`        | `dim_patient`                    |
+| `SECOND_NAME`       | `dim_patient`                    |
+| `LAST_NAME`         | `dim_patient`                    |
+| `PACCITY`           | `dim_patient`                    |
+| `PACINGDAT`         | `dim_patient`                    |
+| `SPENAME`           | `dim_speciality`                 |
+| `SPEGRP_NAME`       | `dim_speciality_group`           |
+| `ESTADO_ASIGNACION` | `dim_assignment_status`          |
+| `ASISTENCIA`        | `dim_assistance_status`          |
+
+Esta vista representa una fuente rica y estandarizada para análisis posteriores, dashboards, reportes, o integración con sistemas externos.
+
+### Modos de construcción de la vista
+
+#### 1. Usando Spark SQL
+
+Las tablas fueron registradas como vistas temporales (`createOrReplaceTempView`) y luego se ejecutó el siguiente query, definido en el archivo `queries/atencion_detalle.sql`:
+
+```sql
+SELECT
+    f.ATTID,
+    f.ATTFIN01 AS FECHA_ATENCION,
+    p.PACID,
+    p.PACDOC,
+    p.FIRST_NAME,
+    p.SECOND_NAME,
+    p.LAST_NAME,
+    p.PACCITY,
+    p.PACINGDAT,
+    s.SPENAME,
+    g.SPEGRP_NAME,
+    a.STATUS_DESC AS ESTADO_ASIGNACION,
+    ass.ASSISTED AS ASISTENCIA
+FROM 
+    fact_attention f
+JOIN 
+    dim_patient p 
+    ON f.PACID = p.PACID
+JOIN 
+    dim_speciality s 
+    ON f.SPEID = s.SPEID
+JOIN 
+    dim_speciality_group g 
+    ON s.SPEGRP_ID = g.SPEGRP_ID
+JOIN 
+    dim_assignment_status a 
+    ON f.ASSIGNMENT_STATUS_ID = a.ASSIGNMENT_STATUS_ID
+JOIN 
+    dim_assistance_status ass 
+    ON f.ASSISTANCE_STATUS_ID = ass.ASSISTANCE_STATUS_ID;
+```
+
+#### 2. Usando PySpark DataFrame API
+
+Como alternativa, se construyó la misma vista directamente con la API de DataFrames, encadenando los joins entre DataFrames previamente cargados:
+
+```python
+df = (
+    dfs["fact_attention"].alias("f")
+    .join(dfs["dim_patient"].alias("p"), "PACID")
+    .join(dfs["dim_speciality"].alias("s"), "SPEID")
+    .join(dfs["dim_speciality_group"].alias("g"), col("s.SPEGRP_ID") == col("g.SPEGRP_ID"))
+    .join(dfs["dim_assignment_status"].alias("a"), col("f.ASSIGNMENT_STATUS_ID") == col("a.ASSIGNMENT_STATUS_ID"))
+    .join(dfs["dim_assistance_status"].alias("ass"), col("f.ASSISTANCE_STATUS_ID") == col("ass.ASSISTANCE_STATUS_ID"))
+    .select(
+        col("f.ATTID"),
+        col("f.ATTFIN01").alias("FECHA_ATENCION"),
+        col("p.PACID"),
+        col("p.PACDOC"),
+        col("p.FIRST_NAME"),
+        col("p.SECOND_NAME"),
+        col("p.LAST_NAME"),
+        col("p.PACCITY"),
+        col("p.PACINGDAT"),
+        col("s.SPENAME"),
+        col("g.SPEGRP_NAME"),
+        col("a.STATUS_DESC").alias("ESTADO_ASIGNACION"),
+        col("ass.ASSISTED").alias("ASISTENCIA")
+    )
+)
+
+```
+
+Este método ofrece mayor control programático y es ideal cuando la lógica se construye dinámicamente dentro de pipelines PySpark.
+
+### Persistencia del resultado
+
+Independientemente del modo utilizado (SQL o DataFrame), la vista resultante fue persistida en la  **zona `gold` del Data Lake** , bajo el nombre `atencion_detalle`, en formato  **Parquet** . Esto garantiza eficiencia en el acceso, compatibilidad con herramientas analíticas como Power BI o Tableau, y soporte nativo para compresión y particionamiento, características clave en entornos de analítica moderna con grandes volúmenes de datos. `data_lake/gold/atencion_detalle/`
+
+### Output en la terminal
+
+![Vista Atención Detalle](./pictures/vista_atencion_detalle.png)
+
+## Punto 5 – Llave natural de la vista `atencion_detalle`
+
+En el contexto de un modelo mejorado del ERP, se construyó una vista lógica consolidada llamada `atencion_detalle`, la cual reúne datos de pacientes, especialidades y atenciones médicas.
+
+Si eliminamos las llaves técnicas (`ATTID`, `PACID`, `SPEID`) de esta vista, es necesario identificar qué combinación de campos permite distinguir de forma única cada registro. En este caso, se propone como **llave natural** la combinación:
+
+`(PACDOC, FECHA_ATENCION)`
+
+### Ejecución
+
+`❯ python puntos_scripts/punto_5.py --mode sql`
+
+### Justificación
+
+* **PACDOC** representa el documento de identidad del paciente, por tanto, es único por persona.
+* **FECHA_ATENCION** corresponde al momento exacto en que se registró la atención médica.
+* En la práctica, es  **altamente improbable que un mismo paciente tenga dos citas distintas registradas con el mismo timestamp exacto** , lo cual refuerza la validez de esta combinación como clave natural.
+* Esta selección fue verificada mediante una consulta agregada en Spark SQL sobre la vista. El resultado no arrojó duplicados, confirmando la unicidad.
+
+### Consulta utilizada para validación:
+
+```sql
+SELECT
+    PACDOC,
+    FECHA_ATENCION,
+    COUNT() AS conteo
+FROM atencion_detalle
+GROUP BY PACDOC, FECHA_ATENCION
+HAVING COUNT() > 1
+```
+
+La consulta anterior se ejecutó correctamente y retornó un conjunto vacío, lo que garantiza que no hay colisiones sobre la combinación `PACDOC + FECHA_ATENCION`.
+
+### Output en la terminal
+
+![Vista llave natural](./pictures/llave_natural.png)
+
+## Punto 6 – Transformación del archivo de diagnósticos en Excel
+
+El objetivo de este punto es convertir un archivo de Excel que contiene diagnósticos registrados por mes en una tabla plana con el siguiente esquema: `DOCUMENTO`, `FECHA`, `DIAGNOSTICO`.
+
+### Descripción del archivo de origen
+
+El archivo `fichas_diagnostico_ficticias.xlsx` contiene una columna de identificación del paciente (`DOCUMENTO`) y múltiples columnas con nombres como "ENERO 2023", "FEBRERO 2023", etc., cada una representando un diagnóstico asociado al mes respectivo. El formato de las fechas es textual (`MMMM YYYY`) y no es compatible directamente con funciones de fecha.
+
+### Solución implementada
+
+Se desarrolló un script en PySpark que:
+
+1. **Carga el archivo Excel** utilizando el paquete `com.crealytics:spark-excel`, lo que permite manipular datos tabulares desde hojas de cálculo directamente en Spark.
+2. **Aplica una transformación tipo "melt"** (similar a la función `melt()` de pandas) que pivota las columnas de meses hacia abajo, generando una estructura de tres columnas: `DOCUMENTO`, `MES_ANO` y `DIAGNOSTICO`.
+3. **Normaliza las fechas** :
+
+* Se separa el texto del campo `MES_ANO` en dos partes (`mes`, `año`).
+* Se utiliza un diccionario (`MONTH_MAP`) para traducir el nombre del mes a su número equivalente.
+* Se construye una fecha con el formato `"01/MM/YYYY"` y se convierte a tipo fecha (`date`) con `to_date`.
+
+1. **Filtra los registros inválidos** , eliminando aquellos sin diagnóstico.
+2. **Guarda el resultado transformado** en formato Parquet en la capa `gold` del data lake:
+
+   `data_lake/gold/diagnosticos_transformados`.
+
+### Output en la terminal:
+
+La tabla final generada tiene la siguiente estructura:
+
+![Vista diagnosticos transformados](./pictures/diagnosticos_transformados.png)
+
+## Punto 7 ‒ Preguntas generales sobre el uso de Databricks y PySpark
+
+---
+
+### a. Separación de **dev / test / prod** en Unity Catalog con zonas **bronze – silver – gold**
+
+Para estructurar adecuadamente los entornos de desarrollo, pruebas y producción dentro de Databricks utilizando Unity Catalog, se propone una arquitectura lógica que garantice gobernanza, trazabilidad y eficiencia en costos, siguiendo el modelo de zonas  **bronze – silver – gold** .
+
+**1. Uso de un único workspace (Unity Catalog)**
+
+* Se opta por un único workspace compartido entre los tres entornos. Esta decisión permite minimizar costos de infraestructura al evitar la duplicación de instancias de control y facilita la administración centralizada de recursos, clústeres y políticas de acceso.
+* Sin embargo si el presupuesto es optimo una práctica más segura sería utilizar un work space por ambiente de desarrollo. Serían tres workspaces para dev, staging y production de tal forma que el CI/CD se haga de forma mas robusta.
+
+**2. Separación por catálogos y external locations**
+
+Se crean tres **catálogos** independientes dentro del mismo Unity Catalog:
+
+* `dev`: para desarrollo local y pruebas exploratorias.
+* `test`: para staging e integración antes de producción.
+* `prod`: entorno final, gobernado y estable.
+
+Cada catálogo se vincula a una **External Location** distinta en el almacenamiento cloud (por ejemplo, en Azure Data Lake o S3), apuntando a una ruta como:
+
+* `abfss://datalake@storageaccount.dfs.core.windows.net/unity/dev/`
+* `abfss://datalake@storageaccount.dfs.core.windows.net/unity/test/`
+* `abfss://datalake@storageaccount.dfs.core.windows.net/unity/prod/`
+
+Esta separación garantiza  **aislamiento físico de los datos** , además del lógico, y facilita la gestión de permisos por entorno.
+
+**3. Organización por esquemas medallion**
+
+En cada uno de los catálogos (`dev`, `test`, `prod`), se definen los esquemas:
+
+* `bronze`: para datos crudos, sin transformar.
+* `silver`: para datos limpios y enriquecidos.
+* `gold`: para datos analíticos, consolidados y agregados.
+* Opcional: `sandbox` para pruebas internas.
+
+La referencia completa de las tablas queda jerarquizada como:
+
+`<catalog>.<schema>.<table>`
+
+Ejemplo: `prod.silver.atenciones_pacientes`
+
+**4. Gobernanza y control de accesos**
+
+La separación de ambientes también se implementa mediante políticas de control de acceso. Se aplican permisos a nivel de catálogo, esquema o tabla usando RBAC de Unity Catalog:
+
+```
+sql
+GRANT USAGE ON CATALOG dev TO data_eng;
+GRANT SELECT ON prod.gold.* TO bi_analysts;
+```
+
+Con esto, cada equipo accede únicamente al entorno que le corresponde, garantizando seguridad, cumplimiento normativo y trazabilidad completa.
+
+**5. Flujo de CI/CD y promoción de código**
+
+Se recomienda parametrizar notebooks, queries y jobs mediante variables de entorno o utilizando  **Databricks Asset Bundles** , que permiten definir targets como `dev`, `test` y `prod`. El mismo código puede desplegarse en los distintos ambientes sin modificación, apuntando al catálogo y esquema correspondiente en cada caso.
+
+El ciclo de promoción típico sigue la secuencia:
+
+ **`dev` → `test` → `prod`** ,
+
+con validaciones automáticas de calidad de datos y despliegue controlado a través de pipelines (por ejemplo, GitHub Actions o Azure DevOps).
+
+#### b. Reutilizar con frecuencia un **DataFrame** costoso
+
+Cuando ese resultado se reutiliza varias veces dentro del mismo flujo, lo ideal no es dejar que Spark lo vuelva a calcular en cada paso, sino  **guardar ese resultado temporalmente en memoria o disco** .
+
+**1. Persistencia en memoria o disco**
+
+Para evitar recálculos innecesarios, se puede aplicar persistencia con `persist()` o `cache()`:
+
+```python
+from pyspark import StorageLevel
+
+df_costoso.persist(StorageLevel.MEMORY_AND_DISK)
+df_costoso.count()  # Dispara la ejecución y guarda el resultado en caché
+
+```
+
+Esto le indica a Spark que almacene el resultado intermedio para que las siguientes operaciones sobre ese DataFrame no vuelvan a recorrer todo el pipeline de transformaciones.
+
+Es especialmente útil si ese DataFrame se usa en más de un paso de la ETL o en múltiples joins posteriores.
+
+**2. Materialización como tabla Delta**
+
+Si ese DataFrame se necesita en diferentes sesiones o en distintos pipelines, es preferible materializarlo como una tabla Delta:
+
+```python
+df_costoso.write.format("delta").mode("overwrite").saveAsTable("silver.datos_intermedios")
+```
+
+Esto permite:
+
+* Consultas optimizadas con Z-ORDER y auto-compaction.
+* Reutilización desde SQL o notebooks sin recalcular nada.
+* Mayor control sobre el versionamiento del dato si se desea usar time-travel.
+
+**3. Otros recursos según el caso**
+
+* Si el DataFrame es pequeño y va a participar en muchos joins, puede aplicarse un  **broadcast join** :
+
+  ```python
+  spark.conf.set("spark.sql.autoBroadcastJoinThreshold", 50*1024*1024)  # 50 MB
+  ```
+* También se puede registrar como vista temporal:
+
+  ```python
+  df_costoso.createOrReplaceTempView("vw_costoso")
+  ```
+
+Esto permite llamarlo desde múltiples queries SQL sin regenerar el DAG cada vez.
+
+---
+
+#### c. ¿En qué variables se ejecuta realmente el plan?
+
+* **`C = A.count()`** → **Sí** ejecuta. Es una acción.
+* **`A` y `B`** → No ejecutan, solo definen transformaciones.
+* **`D` y `E`** → No deberían ejecutarse correctamente. Son errores lógicos.
+* **`explain()`** → Solo muestra el plan, no ejecuta nada.
+
+---
+
+**Resumen clave**
+
+* Use **un catálogo por ambiente** y **un esquema por zona** para mantener gobierno y ciclos CI/CD claros.
+* **Persist** o **materialice** los DataFrames reutilizados; ahorra cómputo y  *shuffle* .
+* Recuerde que solo las **acciones** (count, collect, toPandas, write…) mueven datos; las transformaciones permanecen diferidas hasta entonces.

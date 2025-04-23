@@ -1,0 +1,7 @@
+SELECT 
+    PACDOC,
+    FECHA_ATENCION,
+    COUNT(*) AS conteo
+FROM atencion_detalle
+GROUP BY PACDOC, FECHA_ATENCION
+HAVING COUNT(*) > 1;
