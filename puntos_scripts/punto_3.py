@@ -15,6 +15,7 @@ from utils.populate_model_erp import (
     generate_fact_attention,
     generate_fact_patient_diagnosis
 )
+from utils.spark_helpers import save_parquet
 
 
 def main():
@@ -44,19 +45,18 @@ def main():
         "fact_attention": df_fact_attention,
         "fact_patient_diagnosis": df_fact_patient_diagnosis
     }
-
-    for name, df in dfs.items():
-        print(f"\n=== {name} ===")
-        df.show(truncate=False)
-
-    print("\nGuardando en Parquet...")
-
+    
     Path("data_lake/silver").mkdir(parents=True, exist_ok=True)
 
     for name, df in dfs.items():
         output_path = f"data_lake/silver/{name}"
-        df.write.mode("overwrite").parquet(output_path)
-        print(f"Guardado: {output_path}")
+        print(f"\n=== {name} ===")
+        df.show(truncate=False)
+        save_parquet(
+            data=df,
+            path=output_path
+        )
+        print(f"Guardado: {output_path}")       
 
     spark.stop()
     print("\nFinalizado.")
