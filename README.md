@@ -4,7 +4,7 @@ Este repositorio contiene la solución integral a una problema técnico que un *
 
 ## Estructura del proyecto
 
-s4l/
+`s4l/
 ├── README.md
 ├── requirements.txt
 ├── setup.sh
@@ -36,7 +36,7 @@ s4l/
 │   └── init.sql
 └── utils/
     ├── create_model_erp.py
-    └── populate_model_erp.py
+    └── populate_model_erp.py`
 
 ## Requisitos del entorno
 
