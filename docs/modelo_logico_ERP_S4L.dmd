@@ -1,0 +1,8 @@
+<?xml version = '1.0' encoding = 'UTF-8'?>
+<OSDM_Design class="oracle.dbtools.crest.model.design.Design" name="modelo_logico_ERP_S4L" id="65BB36AA-9B28-94D6-1FA9-1C8FF66667A9" version="3.5">
+<createdBy>LENOVO</createdBy>
+<createdTime>2025-04-22 21:41:06 UTC</createdTime>
+<ownerDesignName>modelo_logico_ERP_S4L</ownerDesignName>
+<capitalNames>false</capitalNames>
+<designId>65BB36AA-9B28-94D6-1FA9-1C8FF66667A9</designId>
+</OSDM_Design>
