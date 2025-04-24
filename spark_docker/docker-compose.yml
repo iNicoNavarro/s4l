@@ -1,0 +1,58 @@
+services:
+  spark-master:
+    build: ./master
+    container_name: spark-master
+    ports:
+      - "8080:8080"  # Spark UI
+      - "7077:7077"  # Spark master
+    volumes:
+      - ../data_lake:/data_lake
+
+  spark-worker:
+    build: ./worker
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    ports:
+      - "8081:8081"  # Spark worker UI
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077
+
+  jupyter:
+    build:
+      context: ../
+      dockerfile: spark_docker/jupyter/Dockerfile
+    container_name: jupyter-notebook
+    ports:
+      - "8888:8888"
+    volumes:
+      - ../notebooks:/home/jovyan/work
+      - ../data_lake:/data_lake
+      - ../data_source:/data_source
+      - ../utils:/s4l/utils
+      - ../puntos_scripts:/s4l/puntos_scripts
+      - ../docs:/s4l/docs
+      - ../.env:/home/jovyan/.env
+    depends_on:
+      - spark-master
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - PYSPARK_PYTHON=python3
+      - SPARK_HOME=/usr/local/spark
+      - SPARK_URL=spark://spark-master:7077
+
+  sql_server:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: sql_server
+    ports:
+      - "1433:1433"
+    environment:
+      - SA_PASSWORD=${SA_PASSWORD}
+      - ACCEPT_EULA=${ACCEPT_EULA}
+      - MSSQL_PID=${MSSQL_PID}
+      - TZ=${TZ}
+    volumes:
+      - sql_data:/var/opt/mssql
+
+volumes:
+  sql_data:
