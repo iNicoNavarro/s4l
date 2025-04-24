@@ -68,4 +68,15 @@ Después de desplegado hay que añadir el kernel de pyspark para eso se abre una
 
 ![jupyter kernel](./pictures/configurar_notebook.png)
 
-SQL Server
+
+#### **Avances funcionales logrados**
+
+* Se levantó Spark completo (master + worker) con Jupyter desde Docker Compose.
+* Se añadieron los volúmenes para ver `data_lake`, `utils`, `notebooks`, etc. desde Jupyter.
+* Se levantó junto con la implementación un contenedor de **SQL Server** accesible desde DBeaver y Jupyter.
+* Se instaló  `pyodbc` y librerías necesarias en Jupyter.
+* Se cargó `.env` en los notebooks.
+* Se instaló el driver JDBC de SQL Server en Spark (`mssql-jdbc-10.2.0.jre11.jar`) para usar `.format("jdbc")`.
+* Se crea el kernel "PySpark" automáticamente eb el despliegue.
+* Se estableció conexión desde Jupyter → SQL Server.
+* Se tiene el ambiente listo para  para **crear tablas en SQL Server desde Spark** (Gold) o poblarlas manualmente.

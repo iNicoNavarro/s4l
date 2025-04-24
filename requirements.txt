@@ -12,3 +12,4 @@ ipykernel==6.29.0
 # Utilidades
 python-dotenv==1.0.1
 wheel>=0.45.1
+pyodbc==5.2.0
