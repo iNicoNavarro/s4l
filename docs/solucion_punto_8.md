@@ -68,7 +68,6 @@ Después de desplegado hay que añadir el kernel de pyspark para eso se abre una
 
 ![jupyter kernel](./pictures/configurar_notebook.png)
 
-
 #### **Avances funcionales logrados**
 
 * Se levantó Spark completo (master + worker) con Jupyter desde Docker Compose.

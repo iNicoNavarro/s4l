@@ -24,3 +24,6 @@ def write_spark_df_to_sql(df, table_name, mode="overwrite"):
       .option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver") \
       .mode(mode) \
       .save()
+    
+
+    #HOLA MUNDO
